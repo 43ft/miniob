@@ -105,7 +105,7 @@ public:
    * @return RC
    */
   RC visit_record(const RID &rid, function<bool(Record &)> visitor);
-
+  RC get_record_values(const Record &record, Value *values);
 public:
   int32_t     table_id() const { return table_meta_.table_id(); }
   const char *name() const;

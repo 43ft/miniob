@@ -33,3 +33,20 @@ int Field::get_int(const Record &record)
 }
 
 const char *Field::get_data(const Record &record) { return record.data() + field_->offset(); }
+
+RC Field::get_value(const Record& record, Value& value) const {
+    if (!field_) {
+        LOG_WARN("Invalid field metadata (null pointer)");
+        return RC::INTERNAL;
+    }
+
+    value.reset();
+    value.set_type(field_->type());
+    
+    const size_t data_offset = field_->offset();
+    const size_t field_length = field_->len();
+    const char* data_ptr = record.data() + data_offset;
+    
+    value.set_data(data_ptr, field_length);
+    return RC::SUCCESS;
+}

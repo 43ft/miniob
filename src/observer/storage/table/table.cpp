@@ -309,6 +309,25 @@ RC Table::make_record(int value_num, const Value *values, Record &record)
   return RC::SUCCESS;
 }
 
+RC Table::get_record_values(const Record& record, Value* values) {
+    const TableMeta& table_meta = table_meta_;
+    const int field_num = table_meta.field_num();
+
+    for (int i = 0; i < field_num; ++i) {
+        const FieldMeta* field_meta = table_meta.field(i);
+        if (!field_meta) {
+            return RC::INTERNAL;
+        }
+
+        Field field(this, field_meta);
+        if (field.get_value(record, values[i]) != RC::SUCCESS) {
+            return RC::INTERNAL;
+        }
+    }
+
+    return RC::SUCCESS;
+}
+
 RC Table::set_value_to_record(char *record_data, const Value &value, const FieldMeta *field)
 {
   size_t       copy_len = field->len();

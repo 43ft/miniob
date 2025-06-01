@@ -20,6 +20,7 @@ See the Mulan PSL v2 for more details. */
 #include "sql/operator/delete_logical_operator.h"
 #include "sql/operator/explain_logical_operator.h"
 #include "sql/operator/insert_logical_operator.h"
+#include "sql/operator/update_logical_operator.h"
 #include "sql/operator/join_logical_operator.h"
 #include "sql/operator/logical_operator.h"
 #include "sql/operator/predicate_logical_operator.h"
@@ -33,8 +34,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/stmt/filter_stmt.h"
 #include "sql/stmt/insert_stmt.h"
 #include "sql/stmt/select_stmt.h"
+#include "sql/stmt/update_stmt.h"
 #include "sql/stmt/stmt.h"
-
 #include "sql/expr/expression_iterator.h"
 
 using namespace std;
@@ -66,6 +67,12 @@ RC LogicalPlanGenerator::create(Stmt *stmt, unique_ptr<LogicalOperator> &logical
       DeleteStmt *delete_stmt = static_cast<DeleteStmt *>(stmt);
 
       rc = create_plan(delete_stmt, logical_operator);
+    } break;
+
+    case StmtType::UPDATE: {
+      UpdateStmt *update_stmt = static_cast<UpdateStmt *>(stmt);
+
+      rc = create_plan(update_stmt, logical_operator);
     } break;
 
     case StmtType::EXPLAIN: {
@@ -260,6 +267,72 @@ RC LogicalPlanGenerator::create_plan(DeleteStmt *delete_stmt, unique_ptr<Logical
   logical_operator = std::move(delete_oper);
   return rc;
 }
+
+RC LogicalPlanGenerator::create_plan(UpdateStmt *update_stmt, unique_ptr<LogicalOperator> &logical_operator)
+{
+  Table *table = update_stmt->target_table();
+  if (!table) {
+    LOG_ERROR("Invalid table in UpdateStmt");
+    return RC::INVALID_ARGUMENT;
+  }
+
+  const char *attribute_name = update_stmt->update_field();
+  const Value *value = update_stmt->new_value();
+  if (!attribute_name || !value) {
+    LOG_ERROR("Invalid attribute name or value in UpdateStmt");
+    return RC::INVALID_ARGUMENT;
+  }
+
+  auto build_base_chain = [&]() -> RC {
+    auto table_scan = std::make_unique<TableGetLogicalOperator>(table, ReadWriteMode::READ_WRITE);
+    
+    FilterStmt *filter = nullptr;
+
+    if (!update_stmt->update_conditions().empty()) {
+      RC rc = FilterStmt::create(
+        nullptr,               // 单表操作无需数据库指针
+        table,                 // 目标表
+        nullptr,               // 单表操作无需表映射
+        update_stmt->update_conditions().data(),
+        update_stmt->update_conditions().size(),
+        filter
+      );
+      
+      if (rc != RC::SUCCESS) {
+        LOG_ERROR("Failed to generate filter statement: %s", strrc(rc));
+        return rc;
+      }
+      
+      std::unique_ptr<FilterStmt> filter_guard(filter);
+      
+      // 递归生成过滤逻辑算子
+      unique_ptr<LogicalOperator> filter_operator;
+      rc = create_plan(filter, filter_operator);
+      if (rc != RC::SUCCESS) {
+        return rc;
+      }
+      
+      filter_operator->add_child(std::move(table_scan));
+      logical_operator = std::move(filter_operator);
+    } else {
+      logical_operator = std::move(table_scan);
+    }
+    
+    return RC::SUCCESS;
+  };
+
+  RC rc = build_base_chain();
+  if (rc != RC::SUCCESS) {
+    return rc;
+  }
+
+  auto update_operator = std::make_unique<UpdateLogicalOperator>(table, attribute_name, value);
+  update_operator->add_child(std::move(logical_operator));
+  logical_operator = std::move(update_operator);
+
+  return RC::SUCCESS;
+}
+
 
 RC LogicalPlanGenerator::create_plan(ExplainStmt *explain_stmt, unique_ptr<LogicalOperator> &logical_operator)
 {
