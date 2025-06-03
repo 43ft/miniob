@@ -15,6 +15,8 @@ See the Mulan PSL v2 for more details. */
 #include "sql/expr/expression.h"
 #include "sql/expr/tuple.h"
 #include "sql/expr/arithmetic_operator.hpp"
+#include "sql/parser/parse_defs.h"
+#include "common/type/attr_type.h"
 
 using namespace std;
 
@@ -124,6 +126,27 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
   RC  rc         = RC::SUCCESS;
   int cmp_result = left.compare(right);
   result         = false;
+
+  if (comp_ == LIKE_OP) {
+    // 确保两个值都是字符串类型
+    if (left.attr_type() != AttrType::CHARS || right.attr_type() != AttrType::CHARS) {
+        LOG_WARN("LIKE operator can only be used with string values");
+        return RC::INTERNAL;
+    }
+    
+    std::string str_str = left.get_string();
+    const char *str = str_str.c_str();
+
+    std::string pattern_str = right.get_string();
+    const char *pattern = pattern_str.c_str();
+
+
+    bool like_result = like_match(str, pattern);
+
+    result = (comp_ == LIKE_OP) ? like_result : !like_result;
+    return RC::SUCCESS;
+}
+
   switch (comp_) {
     case EQUAL_TO: {
       result = (0 == cmp_result);
@@ -150,6 +173,51 @@ RC ComparisonExpr::compare_value(const Value &left, const Value &right, bool &re
   }
 
   return rc;
+}
+
+
+bool ComparisonExpr::like_match(const char *str, const char *pattern) const
+{
+    // 模式为空时的匹配条件
+    if (*pattern == '\0') {
+        return *str == '\0';
+    }
+
+    // 处理通配符%的情况
+    if (*pattern == '%') {
+        // 合并连续的%通配符
+        while (*(pattern + 1) == '%') {
+            ++pattern;
+        }
+        
+        // 尝试%匹配一个或多个字符
+        while (*str) {
+            if (like_match(str, pattern + 1)) {
+                return true;
+            }
+            str++;
+        }
+        
+        // 尝试%匹配零个字符
+        return like_match(str, pattern + 1);
+    }
+
+    // 处理通配符_的情况
+    if (*pattern == '_') {
+        // _需匹配单个字符，字符串不能为空
+        if (*str == '\0') {
+            return false;
+        }
+        return like_match(str + 1, pattern + 1);
+    }
+
+    // 处理普通字符匹配
+    if (*str && (*str == *pattern)) {
+        return like_match(str + 1, pattern + 1);
+    }
+
+    // 所有情况均不匹配时返回false
+    return false;
 }
 
 RC ComparisonExpr::try_get_value(Value &cell) const

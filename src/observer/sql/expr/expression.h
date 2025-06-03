@@ -330,6 +330,8 @@ public:
   template <typename T>
   RC compare_column(const Column &left, const Column &right, vector<uint8_t> &result) const;
 
+  bool like_match(const char *str, const char *pattern) const;
+
 private:
   CompOp                 comp_;
   unique_ptr<Expression> left_;

@@ -98,6 +98,8 @@ UnboundAggregateExpr *create_aggregate_expression(const char *aggregate_name,
         FROM
         WHERE
         AND
+        NOT
+        LIKE
         SET
         ON
         LOAD
@@ -675,6 +677,32 @@ condition:
       delete $1;
       delete $3;
     }
+    | rel_attr LIKE SSS
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_is_attr = 1;
+      $$->left_attr = *$1;
+      $$->right_is_attr = 0;
+      char *tmp = common::substr($3, 1, strlen($3) - 2);
+      $$->right_value.set_string(tmp);
+      free(tmp);
+      $$->comp = LIKE_OP;
+
+      delete $1;
+    }
+    | rel_attr NOT LIKE SSS 
+    {
+      $$ = new ConditionSqlNode;
+      $$->left_is_attr = 1;
+      $$->left_attr = *$1;
+      $$->right_is_attr = 0;
+      char *tmp = common::substr($4, 1, strlen($4) - 2); 
+      $$->right_value.set_string(tmp);
+      free(tmp);
+      $$->comp = NOT_LIKE_OP;
+
+      delete $1;
+    }
     ;
 
 comp_op:
@@ -684,6 +712,8 @@ comp_op:
     | LE { $$ = LESS_EQUAL; }
     | GE { $$ = GREAT_EQUAL; }
     | NE { $$ = NOT_EQUAL; }
+    | LIKE { $$ = LIKE_OP; }
+    | NOT LIKE { $$ = NOT_LIKE_OP; }
     ;
 
 // your code here

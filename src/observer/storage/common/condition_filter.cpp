@@ -17,6 +17,7 @@ See the Mulan PSL v2 for more details. */
 #include "common/value.h"
 #include "storage/record/record_manager.h"
 #include "storage/table/table.h"
+#include "common/type/attr_type.h"
 #include <math.h>
 #include <stddef.h>
 
@@ -110,8 +111,20 @@ RC DefaultConditionFilter::init(Table &table, const ConditionSqlNode &condition)
   //  }
   // NOTE：这里没有实现不同类型的数据比较，比如整数跟浮点数之间的对比
   // 但是选手们还是要实现。这个功能在预选赛中会出现
-  if (type_left != type_right) {
+  
+  // 处理 LIKE 操作符的特殊类型要求
+if (condition.comp == LIKE_OP|| condition.comp == NOT_LIKE_OP) {
+    if (type_left != AttrType::CHARS || type_right != AttrType::CHARS) {
+        LOG_WARN("LIKE operation requires string type on both sides");
+        return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+      }
+  }
+  // 处理其他操作符的类型一致性要求
+  else {
+    if (type_left != type_right) {
+    LOG_WARN("Operation requires same type on both sides");
     return RC::SCHEMA_FIELD_TYPE_MISMATCH;
+    }
   }
 
   return init(left, right, type_left, condition.comp);
@@ -136,6 +149,11 @@ bool DefaultConditionFilter::filter(const Record &rec) const
     right_value.set_value(right_.value);
   }
 
+   if (comp_op_ == LIKE_OP || comp_op_ == NOT_LIKE_OP ) {
+    bool match_result = like_match(left_value, right_value);
+    return (comp_op_ == LIKE_OP) ? match_result : !match_result;
+  }
+  
   int cmp_result = left_value.compare(right_value);
 
   switch (comp_op_) {
@@ -210,4 +228,51 @@ bool CompositeConditionFilter::filter(const Record &rec) const
     }
   }
   return true;
+}
+
+bool DefaultConditionFilter::like_match(const Value &left, const Value &right) const {
+  // 类型检查：确保都是字符串
+  if (left.attr_type() != AttrType::CHARS || right.attr_type() != AttrType::CHARS) {
+    return false;
+  }
+
+  // 直接获取字符串指针（避免临时对象）
+  const char* str = left.get_string().c_str();
+  const char* pattern = right.get_string().c_str();
+
+  // 空指针保护
+  if (!str || !pattern) {
+    return false;
+  }
+
+  // 迭代处理模式匹配
+  while (*pattern) {
+    if (*pattern == '%') {
+      pattern++;
+      
+      // 处理%匹配0或多个字符
+      while (*str) {
+        if (like_match(Value(str), Value(pattern))) {
+          return true;
+        }
+        str++;
+      }
+      // 检查%匹配0个字符的情况
+      return *pattern == '\0';
+    } 
+    else if (*pattern == '_') {
+      // _必须匹配单个字符
+      if (*str == '\0') return false;
+      str++;
+      pattern++;
+    }
+    else {
+      // 普通字符匹配
+      if (*str != *pattern) return false;
+      str++;
+      pattern++;
+    }
+  }
+  // 模式处理完毕，检查字符串是否同步结束
+  return *str == '\0';
 }
