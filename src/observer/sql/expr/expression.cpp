@@ -187,7 +187,7 @@ bool ComparisonExpr::like_match(const char *str, const char *pattern) const
     if (*pattern == '%') {
         // 合并连续的%通配符
         while (*(pattern + 1) == '%') {
-            ++pattern;
+            pattern++;
         }
         
         // 尝试%匹配一个或多个字符

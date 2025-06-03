@@ -236,9 +236,11 @@ bool DefaultConditionFilter::like_match(const Value &left, const Value &right) c
     return false;
   }
 
-  // 直接获取字符串指针（避免临时对象）
-  const char* str = left.get_string().c_str();
-  const char* pattern = right.get_string().c_str();
+  std::string str_str = left.get_string();
+  const char *str = str_str.c_str();
+
+  std::string pattern_str = right.get_string();
+  const char *pattern = pattern_str.c_str();
 
   // 空指针保护
   if (!str || !pattern) {
